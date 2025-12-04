@@ -8,7 +8,6 @@
 import Config
 
 config :briskula,
-  ecto_repos: [Briskula.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint

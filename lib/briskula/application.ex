@@ -9,9 +9,9 @@ defmodule Briskula.Application do
   def start(_type, _args) do
     children = [
       BriskulaWeb.Telemetry,
-      Briskula.Repo,
-      {DNSCluster, query: Application.get_env(:briskula, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Briskula.PubSub},
+      {Registry, keys: :unique, name: :BriskulaRegistry},
+      {DNSCluster, query: Application.get_env(:briskula, :dns_cluster_query) || :ignore},
       # Start a worker by calling: Briskula.Worker.start_link(arg)
       # {Briskula.Worker, arg},
       # Start to serve requests, typically the last entry

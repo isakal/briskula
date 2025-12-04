@@ -41,9 +41,6 @@ defmodule Briskula.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.8.1"},
-      {:phoenix_ecto, "~> 4.5"},
-      {:ecto_sql, "~> 3.13"},
-      {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
@@ -65,7 +62,11 @@ defmodule Briskula.MixProject do
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+
+
+      {:faker, "~> 0.19.0-alpha.1"},
+      {:nanoid, "~> 2.1.0"},
     ]
   end
 
@@ -77,10 +78,7 @@ defmodule Briskula.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind briskula", "esbuild briskula"],
       "assets.deploy": [

@@ -17,7 +17,13 @@ defmodule BriskulaWeb.Router do
   scope "/", BriskulaWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    # get "/home", PageController, :home
+
+    # liveview
+    live_session :default do
+      live "/", GameLive.Index
+      live "/:id", GameLive.Game
+    end
   end
 
   # Other scopes may use custom stacks.

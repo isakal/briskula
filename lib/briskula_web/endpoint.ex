@@ -15,6 +15,10 @@ defmodule BriskulaWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  socket "/socket", BriskulaWeb.GameSocket,
+    websocket: true,
+    longpoll: false
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
@@ -32,7 +36,6 @@ defmodule BriskulaWeb.Endpoint do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
     plug Phoenix.LiveReloader
     plug Phoenix.CodeReloader
-    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :briskula
   end
 
   plug Phoenix.LiveDashboard.RequestLogger,
