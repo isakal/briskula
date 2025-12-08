@@ -60,6 +60,25 @@ defmodule Briskula.GameServer do
   end
 
   @doc """
+  Creates a new game with a lobby containing a single player.
+  Starts the game under the DynamicSupervisor.
+
+  ## Examples
+
+      iex> GameServer.create_game("game123", "alice")
+      {:ok, pid}
+  """
+  def create_game(game_id, player) when is_binary(player) do
+    child_spec = %{
+      id: {__MODULE__, game_id},
+      start: {__MODULE__, :start_link, [game_id, player]},
+      restart: :temporary
+    }
+
+    DynamicSupervisor.start_child(Briskula.GameSupervisor, child_spec)
+  end
+
+  @doc """
   Gets the full game state.
 
   Returns the complete game state including all players' hands.

@@ -11,10 +11,8 @@ defmodule Briskula.Application do
       BriskulaWeb.Telemetry,
       {Phoenix.PubSub, name: Briskula.PubSub},
       {Registry, keys: :unique, name: :BriskulaRegistry},
+      {DynamicSupervisor, name: Briskula.GameSupervisor, strategy: :one_for_one},
       {DNSCluster, query: Application.get_env(:briskula, :dns_cluster_query) || :ignore},
-      # Start a worker by calling: Briskula.Worker.start_link(arg)
-      # {Briskula.Worker, arg},
-      # Start to serve requests, typically the last entry
       BriskulaWeb.Endpoint
     ]
 

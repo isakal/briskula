@@ -40,6 +40,103 @@ defmodule Briskula.GameServerTest do
     end
   end
 
+  describe "GameServer.create_game/2 - happy path -->" do
+    test "creates a lobby with single player via DynamicSupervisor", %{game_id: game_id} do
+      assert {:ok, pid} = GameServer.create_game(game_id, "p1")
+      assert is_pid(pid)
+
+      game = GameServer.get_game(game_id)
+
+      # Verify player is set correctly
+      assert game.players == ["p1"]
+
+      # Verify phase is :lobby
+      assert game.phase == :lobby
+
+      # Verify game is not initialized yet
+      assert game.deck == []
+      assert game.trump_card == nil
+      assert game.hands == %{}
+      assert game.captured_cards == %{}
+      assert game.table == []
+      assert game.turn_order == []
+      assert game.current_player == nil
+    end
+
+    test "creates a game that can be found in Registry", %{game_id: game_id} do
+      {:ok, pid} = GameServer.create_game(game_id, "p1")
+
+      # Verify game is registered in Registry
+      assert [{^pid, _}] = Registry.lookup(:BriskulaRegistry, game_id)
+    end
+
+    test "creates a game supervised by DynamicSupervisor", %{game_id: game_id} do
+      {:ok, pid} = GameServer.create_game(game_id, "p1")
+
+      # Verify the process is alive
+      assert Process.alive?(pid)
+
+      # Verify it's supervised by the DynamicSupervisor
+      children = DynamicSupervisor.which_children(Briskula.GameSupervisor)
+      assert Enum.any?(children, fn {_, child_pid, _, _} -> child_pid == pid end)
+    end
+
+    test "game can be used normally after creation via supervisor", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.create_game(game_id, "p1")
+
+      # Join another player
+      assert {:ok, _view} = GameServer.join_game(game_id, "p2")
+
+      # Start the game
+      assert {:ok, game} = GameServer.start_game(game_id)
+
+      # Verify game is properly initialized
+      assert game.phase == :playing
+      assert game.players == ["p1", "p2"]
+      assert length(game.hands["p1"]) == 3
+      assert length(game.hands["p2"]) == 3
+    end
+  end
+
+  describe "GameServer.create_game/2 - unhappy path -->" do
+    test "rejects duplicate game ID", %{game_id: game_id} do
+      # Create first game
+      assert {:ok, pid1} = GameServer.create_game(game_id, "p1")
+      assert is_pid(pid1)
+
+      # Try to create another game with the same ID
+      assert {:error, {:already_started, pid2}} = GameServer.create_game(game_id, "p2")
+
+      # The returned PID should be the original process
+      assert pid2 == pid1
+
+      # Original game should still be intact with original player
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1"]
+    end
+
+    test "allows creating multiple games with different IDs" do
+      game_id1 = "create_test_1_#{:erlang.unique_integer([:positive])}"
+      game_id2 = "create_test_2_#{:erlang.unique_integer([:positive])}"
+      game_id3 = "create_test_3_#{:erlang.unique_integer([:positive])}"
+
+      # Create multiple games
+      {:ok, pid1} = GameServer.create_game(game_id1, "alice")
+      {:ok, pid2} = GameServer.create_game(game_id2, "bob")
+      {:ok, pid3} = GameServer.create_game(game_id3, "charlie")
+
+      # All should be different processes
+      assert pid1 != pid2
+      assert pid2 != pid3
+      assert pid1 != pid3
+
+      # Each game should have correct player
+      assert GameServer.get_game(game_id1).players == ["alice"]
+      assert GameServer.get_game(game_id2).players == ["bob"]
+      assert GameServer.get_game(game_id3).players == ["charlie"]
+    end
+  end
+
   describe "GameServer.join_game/2 - happy path -->" do
     test "adds second player to lobby", %{game_id: game_id} do
       {:ok, _pid} = GameServer.start_link(game_id, "p1")
