@@ -8,4 +8,10 @@ defmodule BriskulaWeb.Presence do
   use Phoenix.Presence,
     otp_app: :briskula,
     pubsub_server: Briskula.PubSub
+
+    def init(_opts) do
+      # This initializes the Presence process's internal state
+      {:ok, %{}}
+    end
+
 end

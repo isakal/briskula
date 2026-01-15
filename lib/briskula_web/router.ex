@@ -22,7 +22,7 @@ defmodule BriskulaWeb.Router do
     # liveview
     live_session :default do
       live "/", GameLive.Index
-      live "/:id", GameLive.Game
+      live "/:id", GameLive.Index  # Same LiveView for both routes
     end
   end
 

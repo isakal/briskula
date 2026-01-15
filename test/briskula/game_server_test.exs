@@ -200,6 +200,179 @@ defmodule Briskula.GameServerTest do
     end
   end
 
+  describe "GameServer.leave_game/2 - happy path -->" do
+    test "removes a player from lobby with 2 players", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+
+      assert {:ok, view} = GameServer.leave_game(game_id, "p2")
+
+      # Verify filtered view returned
+      assert view.players == ["p1"]
+      assert view.phase == :lobby
+
+      # Verify actual game state
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1"]
+      assert game.phase == :lobby
+    end
+
+    test "removes the creator from lobby", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+
+      assert {:ok, view} = GameServer.leave_game(game_id, "p1")
+
+      # Verify filtered view
+      assert view.players == ["p2"]
+      assert view.phase == :lobby
+
+      # Verify game state
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p2"]
+    end
+
+    test "removes a player from lobby with 4 players", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.join_game(game_id, "p3")
+      {:ok, _view} = GameServer.join_game(game_id, "p4")
+
+      assert {:ok, view} = GameServer.leave_game(game_id, "p3")
+
+      # Verify filtered view
+      assert view.players == ["p1", "p2", "p4"]
+      assert view.phase == :lobby
+
+      # Verify game state
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1", "p2", "p4"]
+    end
+
+    test "removes middle player from lobby", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.join_game(game_id, "p3")
+
+      assert {:ok, view} = GameServer.leave_game(game_id, "p2")
+
+      assert view.players == ["p1", "p3"]
+
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1", "p3"]
+    end
+
+    test "can leave and rejoin the game", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.leave_game(game_id, "p2")
+
+      # p2 can rejoin after leaving
+      assert {:ok, view} = GameServer.join_game(game_id, "p2")
+
+      assert view.players == ["p1", "p2"]
+
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1", "p2"]
+    end
+
+    test "returns filtered view for leaving player", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.join_game(game_id, "p3")
+
+      # p2 leaves
+      {:ok, view} = GameServer.leave_game(game_id, "p2")
+
+      # Verify it's a filtered view for p2
+      assert view.players == ["p1", "p3"]
+      assert view.phase == :lobby
+      assert view.hand == []
+      assert view.hand_counts == %{}
+    end
+
+    test "sequential leaves reduce player count correctly", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.join_game(game_id, "p3")
+      {:ok, _view} = GameServer.join_game(game_id, "p4")
+
+      # All players leave except creator
+      {:ok, _view} = GameServer.leave_game(game_id, "p4")
+      {:ok, _view} = GameServer.leave_game(game_id, "p3")
+      {:ok, _view} = GameServer.leave_game(game_id, "p2")
+
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1"]
+      assert game.phase == :lobby
+    end
+  end
+
+  describe "GameServer.leave_game/2 - unhappy path -->" do
+    test "rejects leave when player not in game", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+
+      assert {:error, :player_not_in_game} = GameServer.leave_game(game_id, "p3")
+
+      # Verify state unchanged
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1", "p2"]
+    end
+
+    test "rejects leave when player never joined", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+
+      assert {:error, :player_not_in_game} = GameServer.leave_game(game_id, "p2")
+
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1"]
+    end
+
+    test "rejects leave when game already started (2 players)", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _game} = GameServer.start_game(game_id)
+
+      assert {:error, :game_already_started} = GameServer.leave_game(game_id, "p1")
+
+      # Verify game state unchanged
+      game = GameServer.get_game(game_id)
+      assert game.phase == :playing
+      assert game.players == ["p1", "p2"]
+    end
+
+    test "rejects leave when game already started (4 players)", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.join_game(game_id, "p3")
+      {:ok, _view} = GameServer.join_game(game_id, "p4")
+      {:ok, _game} = GameServer.start_game(game_id)
+
+      assert {:error, :game_already_started} = GameServer.leave_game(game_id, "p2")
+
+      game = GameServer.get_game(game_id)
+      assert game.phase == :playing
+      assert game.players == ["p1", "p2", "p3", "p4"]
+    end
+
+    test "rejects leave after player already left", %{game_id: game_id} do
+      {:ok, _pid} = GameServer.start_link(game_id, "p1")
+      {:ok, _view} = GameServer.join_game(game_id, "p2")
+      {:ok, _view} = GameServer.leave_game(game_id, "p2")
+
+      # Try to leave again
+      assert {:error, :player_not_in_game} = GameServer.leave_game(game_id, "p2")
+
+      game = GameServer.get_game(game_id)
+      assert game.players == ["p1"]
+    end
+
+    test "rejects leave for non-existent game" do
+      assert {:error, :game_not_found} = GameServer.leave_game("fake_id", "p1")
+    end
+  end
+
   describe "GameServer.start_game/1 - happy path (1v1) -->" do
     test "starts a valid 1v1 game with 2 players", %{game_id: game_id} do
       {:ok, _pid} = GameServer.start_link(game_id, "p1")
@@ -825,6 +998,7 @@ defmodule Briskula.GameServerTest do
       assert {:error, :game_not_found} = GameServer.get_game(fake_id)
       assert {:error, :game_not_found} = GameServer.get_game(fake_id, "p1")
       assert {:error, :game_not_found} = GameServer.join_game(fake_id, "p2")
+      assert {:error, :game_not_found} = GameServer.leave_game(fake_id, "p1")
       assert {:error, :game_not_found} = GameServer.start_game(fake_id)
       assert {:error, :game_not_found} = GameServer.play_card(fake_id, "p1", Fixtures.card(:spades, :ace))
       assert {:error, :game_not_found} = GameServer.resolve_trick(fake_id)

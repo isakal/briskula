@@ -13,7 +13,8 @@ defmodule Briskula.Application do
       {Registry, keys: :unique, name: :BriskulaRegistry},
       {DynamicSupervisor, name: Briskula.GameSupervisor, strategy: :one_for_one},
       {DNSCluster, query: Application.get_env(:briskula, :dns_cluster_query) || :ignore},
-      BriskulaWeb.Endpoint
+      BriskulaWeb.Endpoint,
+      BriskulaWeb.Presence,
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

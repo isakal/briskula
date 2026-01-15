@@ -1,83 +1,206 @@
 defmodule BriskulaWeb.GameLive.Index do
   use BriskulaWeb, :live_view
 
+  alias Briskula.GameServer
+
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <.header>
-      {@page_title}
-      </.header>
+      <%= case @view do %>
+        <% :home -> %>
+          <.live_component
+            module={BriskulaWeb.GameLive.HomeComponent}
+            id="home"
+            room_code={@game_id}
+          />
 
-      <.form
-        for={@form}
-        id="home-form"
-        phx-change="change"
-        phx-submit="save"
-      >
-        <.input field={@form[:username]} type="text" label="Username*" minlength="2" maxlength="15" placeholder={@username_placeholder} required/>
+        <% :lobby -> %>
+          <.live_component
+            module={BriskulaWeb.GameLive.LobbyComponent}
+            id="lobby"
+            game_id={@game_id}
+            username={@username}
+            players={@players}
+          />
 
-        <br>
-
-        <.input field={@form[:room_code]} type="text" label="Room Code" />
-
-
-        <.button phx-disable-with="Starting" variant="primary">{@btn_text}</.button>
-
-      </.form>
+        <% :game -> %>
+          <.live_component
+            module={BriskulaWeb.GameLive.GameComponent}
+            id="game"
+            game_id={@game_id}
+            username={@username}
+            mode={@mode}
+          />
+      <% end %>
     </Layouts.app>
     """
   end
 
   @impl true
   def mount(_params, _session, socket) do
-
-    form = %{
-      "username" => "",
-      "room_code" => ""
-    }
-
-    {
-      :ok,
-      socket
-      # random username placeholder
-      |> assign(:username_placeholder, Faker.Person.name())
-      |> assign(:btn_text, "Start a game")
-
-
-      |> assign(:page_title, "Briškula")
-      |> assign(form: to_form(form))
-    }
+    {:ok,
+     socket
+     |> assign(:view, :home)
+     |> assign(:username, nil)
+     |> assign(:players, [])
+     |> assign(:game_id, "")}
   end
 
   @impl true
-  def handle_event("change", %{"room_code" => room_code}, socket) do
-    IO.inspect(room_code)
+  def handle_params(params, _uri, socket) do
+    # IO.inspect(params)
+    # IO.inspect(socket)
 
-    {
-      :noreply,
-      socket
-      |> assign(:btn_text, blank?(room_code) && "Start a game" || "Join the game")
-    }
+    case params do
+      # Home view: / with no params
+      %{} when map_size(params) == 0 ->
+        {:noreply, socket}
+
+      # Game/Lobby view: /:id
+      %{"id" => game_id} ->
+
+        case GameServer.get_game(game_id) do
+          {:error, :game_not_found} ->
+            {:noreply,
+             socket
+             |> push_navigate(to: "/")
+             |> put_flash(:error, "Game #{game_id} not found")}
+
+          game ->
+            cond do
+              # Check if the game is in the lobby phase
+              game.phase == :lobby ->
+                {:noreply,
+                 socket
+                 |> assign(:game_id, game_id)}
+
+              # TODO: add a function for sending to player and spectator view
+              game.phase == :playing ->
+                {:noreply,
+                 socket
+                 |> assign(:game_id, game_id)}
+            end
+        end
+    end
   end
 
   @impl true
-  def handle_event("save", form_data, socket) do
+  def handle_info({:create_game, username}, socket) do
+    game_id = GameServer.generate_id()
 
-    IO.inspect(form_data)
+    case GameServer.create_game(game_id, username) do
+      {:ok, _pid} ->
+        # Subscribe to PubSub
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Briskula.PubSub, game_id)
+        end
 
+        {:noreply,
+         socket
+         |> assign(:view, :lobby)
+         |> assign(:username, username)
+         |> assign(:game_id, game_id)
+         |> push_patch(to: ~p"/#{game_id}")}
 
-
-    {:noreply, socket}
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to create game")}
+    end
   end
 
-  defp blank?(str_or_nil),
-    do: "" == str_or_nil |> to_string() |> String.trim()
+  @impl true
+  def handle_info({:join_game, username, game_id}, socket) do
+    case GameServer.get_game(game_id) do
+      {:error, :game_not_found} ->
+        {:noreply, put_flash(socket, :error, "Game '#{game_id}' not found")}
 
-  defp sanitize(input) do
-    input
-    |> String.trim(" ")
-    |> String.trim("\n")
+      _game ->
+        # Try to join the game
+        case GameServer.join_game(game_id, username) do
+          {:ok, _view} ->
+            # Subscribe to PubSub
+            if connected?(socket) do
+              Phoenix.PubSub.subscribe(Briskula.PubSub, game_id)
+            end
+
+            # Load fresh game state
+            game = GameServer.get_game(game_id)
+
+            {:noreply,
+              socket
+              |> assign(:view, :lobby)
+              |> assign(:game, game)
+              |> assign(:game_id, game_id)
+              |> assign(:username, username)
+              |> push_patch(to: ~p"/#{game_id}")}
+
+          {:error, :game_full} ->
+            {:noreply, put_flash(socket, :error, "Game is full")}
+
+          {:error, :player_name_taken} ->
+            {:noreply, put_flash(socket, :error, "Username already taken in this game")}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Failed to join game")}
+        end
+    end
   end
 
+  @impl true
+  def handle_info({:game_started}, socket) do
+    # Game started, reload game state and switch to game view
+    game = GameServer.get_game(socket.assigns.game_id)
+
+    {:noreply,
+      socket
+      |> assign(game: game)
+      |> assign(view: :game)}
+  end
+
+  # handle joins and leaves
+  @impl true
+  def handle_info(%{event: "presence_diff"}, socket) do
+    # Presence changed, just return socket - component will re-render
+
+    game = GameServer.get_game(socket.assigns.game_id)
+
+    {:noreply, assign(socket, :players, game.players)}
+  end
+
+  # propagating flashes
+  @impl true
+  def handle_info({:put_flash, kind, message}, socket) do
+    {:noreply, put_flash(socket, kind, message)}
+  end
+
+  @impl true
+  def terminate(_reason, socket) do
+    # untrack the presence
+    BriskulaWeb.Presence.untrack(
+      self(),
+      socket.assigns.game_id,
+      socket.assigns.username
+    )
+
+    # leave the game (if in the :lobby phase)
+    if socket.assigns.view == :lobby do
+      GameServer.leave_game(
+        socket.assigns.game_id,
+        socket.assigns.username
+        )
+    end
+
+    # delete the game if you are the last user so the memory doesn't fill with empty games
+    case GameServer.get_game(socket.assigns.game_id) do
+      {:error, _} ->
+        {:noreply, socket}
+
+      game ->
+        if game.players == [] do
+          [{pid, _}] = Registry.lookup(:BriskulaRegistry, socket.assigns.game_id)
+
+          Process.exit(pid, :kill)
+        end
+      end
+  end
 end

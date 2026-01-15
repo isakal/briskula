@@ -11,7 +11,9 @@ defmodule Briskula.Game do
   # Module attributes
   @suits [:coins, :spades, :cups, :batons]
   @ranks_strength [:ace, :three, :king, :knight, :knave, :"7", :"6", :"5", :"4", :"2"]
-  @rank_index Map.new(Enum.with_index(@ranks_strength), fn {rank, idx} -> {rank, idx} end)
+  @rank_index @ranks_strength
+  |> Enum.with_index()
+  |> Map.new(fn {rank, idx} -> {rank, idx} end)
   @ranks_points %{
     :ace => 11,
     :three => 10,
@@ -85,6 +87,20 @@ defmodule Briskula.Game do
          {:ok, game} <- validate_game_not_full(game),
          {:ok, game} <- validate_unique_player_name(game, player) do
       {:ok, %{game | players: game.players ++ [player]}}
+    end
+  end
+
+  @doc """
+  Removes a player from the game lobby.
+
+  Returns `{:ok, updated_game}` on success,
+  or `{:error, reason}` if validation fails.
+  """
+  @spec leave_game(%__MODULE__{}, String.t()) :: {:ok, %__MODULE__{}} | {:error, atom()}
+  def leave_game(%__MODULE__{} = game, player) when is_binary(player) do
+    with {:ok, game} <- validate_lobby_phase(game),
+         {:ok, game} <- validate_player_in_game(game, player) do
+      {:ok, %{game | players: List.delete(game.players, player)}}
     end
   end
 
@@ -288,6 +304,14 @@ defmodule Briskula.Game do
       {:error, :player_name_taken}
     else
       {:ok, game}
+    end
+  end
+
+  defp validate_player_in_game(%{players: players} = game, player) do
+    if player in players do
+      {:ok, game}
+    else
+      {:error, :player_not_in_game}
     end
   end
 

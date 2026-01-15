@@ -15,7 +15,14 @@ defmodule Briskula.GameServer do
   use GenServer
   alias Briskula.Game
 
+  # Registry name
   @registry_name :BriskulaRegistry
+
+  # Alphabet used for ID generation
+  @alphabet [?0..?9, ?A..?Z, ?a..?z]
+    |> Enum.concat()
+    |> Enum.to_list()
+    |> List.to_string()
 
   defp via_tuple(game_id) do
     {:via, Registry, {@registry_name, game_id}}
@@ -34,7 +41,7 @@ defmodule Briskula.GameServer do
       true
   """
   def generate_id() do
-    id = Nanoid.generate(8)
+    id = Nanoid.generate(4, @alphabet)
 
     case Registry.lookup(@registry_name, id) do
       [] ->
@@ -134,6 +141,25 @@ defmodule Briskula.GameServer do
         {:error, :game_not_found}
       [{pid, _}] ->
         GenServer.call(pid, {:join_game, player})
+    end
+  end
+
+  @doc """
+  Removes a player from the game lobby.
+
+  Returns the filtered game view for the leaving player or an error.
+
+  ## Examples
+
+      iex> GameServer.leave_game("game123", "bob")
+      {:ok, filtered_game_view}
+  """
+  def leave_game(game_id, player) when is_binary(player) do
+    case Registry.lookup(@registry_name, game_id) do
+      [] ->
+        {:error, :game_not_found}
+      [{pid, _}] ->
+        GenServer.call(pid, {:leave_game, player})
     end
   end
 
@@ -249,6 +275,18 @@ defmodule Briskula.GameServer do
     case Game.join_game(game, player) do
       {:ok, updated_game} ->
         # Return filtered view for the joining player
+        {:reply, {:ok, Game.filter_view(updated_game, player)}, updated_game}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, game}
+    end
+  end
+
+  @impl true
+  def handle_call({:leave_game, player}, _from, %Game{} = game) do
+    case Game.leave_game(game, player) do
+      {:ok, updated_game} ->
+        # Return filtered view for the leaving player
         {:reply, {:ok, Game.filter_view(updated_game, player)}, updated_game}
 
       {:error, reason} ->

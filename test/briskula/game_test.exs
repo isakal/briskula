@@ -78,6 +78,129 @@ defmodule Briskula.GameTest do
     end
   end
 
+  describe "Game.leave_game/2 - happy path -->" do
+    test "removes a player from lobby with 2 players" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+
+      assert {:ok, game} = Briskula.Game.leave_game(game, "p2")
+      assert game.players == ["p1"]
+      assert game.phase == :lobby
+    end
+
+    test "removes the creator from lobby" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+
+      assert {:ok, game} = Briskula.Game.leave_game(game, "p1")
+      assert game.players == ["p2"]
+      assert game.phase == :lobby
+    end
+
+    test "removes a player from lobby with 4 players" do
+      {:ok, game} =
+        Briskula.Game.new("p1")
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p2") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p3") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p4") end)
+
+      assert {:ok, game} = Briskula.Game.leave_game(game, "p3")
+      assert game.players == ["p1", "p2", "p4"]
+      assert game.phase == :lobby
+    end
+
+    test "removes middle player from lobby" do
+      {:ok, game} =
+        Briskula.Game.new("p1")
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p2") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p3") end)
+
+      assert {:ok, game} = Briskula.Game.leave_game(game, "p2")
+      assert game.players == ["p1", "p3"]
+      assert game.phase == :lobby
+    end
+
+    test "can leave and rejoin the game" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+      {:ok, game} = Briskula.Game.leave_game(game, "p2")
+
+      assert {:ok, game} = Briskula.Game.join_game(game, "p2")
+      assert game.players == ["p1", "p2"]
+      assert game.phase == :lobby
+    end
+
+    test "removes last player leaving only creator" do
+      {:ok, game} =
+        Briskula.Game.new("p1")
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p2") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p3") end)
+        |> then(fn {:ok, g} -> Briskula.Game.leave_game(g, "p2") end)
+
+      assert {:ok, game} = Briskula.Game.leave_game(game, "p3")
+      assert game.players == ["p1"]
+      assert game.phase == :lobby
+    end
+  end
+
+  describe "Game.leave_game/2 - unhappy path -->" do
+    test "rejects leave when player not in game" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+
+      assert {:error, :player_not_in_game} = Briskula.Game.leave_game(game, "p3")
+      assert game.players == ["p1", "p2"]
+    end
+
+    test "rejects leave when player never joined" do
+      {:ok, game} = Briskula.Game.new("p1")
+
+      assert {:error, :player_not_in_game} = Briskula.Game.leave_game(game, "p2")
+      assert game.players == ["p1"]
+    end
+
+    test "rejects leave when game already started (2 players)" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+      {:ok, game} = Briskula.Game.start(game)
+
+      assert {:error, :game_already_started} = Briskula.Game.leave_game(game, "p1")
+      assert game.phase == :playing
+    end
+
+    test "rejects leave when game already started (4 players)" do
+      {:ok, game} =
+        Briskula.Game.new("p1")
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p2") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p3") end)
+        |> then(fn {:ok, g} -> Briskula.Game.join_game(g, "p4") end)
+        |> then(fn {:ok, g} -> Briskula.Game.start(g) end)
+
+      assert {:error, :game_already_started} = Briskula.Game.leave_game(game, "p2")
+      assert game.phase == :playing
+    end
+
+    test "rejects leave when game is finished" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+      {:ok, game} = Briskula.Game.start(game)
+      # Manually set phase to :finished for testing
+      game = %{game | phase: :finished}
+
+      assert {:error, :game_already_started} = Briskula.Game.leave_game(game, "p1")
+      assert game.phase == :finished
+    end
+
+    test "rejects leave after player already left" do
+      {:ok, game} = Briskula.Game.new("p1")
+      {:ok, game} = Briskula.Game.join_game(game, "p2")
+      {:ok, game} = Briskula.Game.leave_game(game, "p2")
+
+      assert {:error, :player_not_in_game} = Briskula.Game.leave_game(game, "p2")
+      assert game.players == ["p1"]
+    end
+  end
+
   describe "Game.start/1 - happy path (1v1) -->" do
     test "starts a valid 1v1 game with 2 players" do
       {:ok, game} = Briskula.Game.new("p1")
